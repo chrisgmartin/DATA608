@@ -1,0 +1,221 @@
+---
+title: "DATA608 - Homework One - Principles of Data Visualization and Introduction to ggplot2"
+author: "Chris G Martin"
+date: "February 5, 2017"
+fontsize: 11pt
+output:
+  html_document:
+    fig_caption: yes
+    force_captions: yes
+    highlight: pygments
+    number_sections: no
+    theme: united
+    toc: yes
+  pdf_document:
+    fig_caption: yes
+    highlight: pygments
+    latex_engine: xelatex
+    number_sections: no
+    toc: yes
+---
+
+#Objective
+
+Using a dataset about the 5,000 fastest growing companies in the US, as compiled by Inc. magazine (limited to ggplot2):
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#load packages
+library(dplyr)
+library(ggplot2)
+#install.packages('choroplethr')
+library(choroplethr)
+#install.packages('choroplethrMaps')
+library(choroplethrMaps)
+
+```
+
+```{r echo=FALSE}
+inc500 <- read.csv("https://raw.githubusercontent.com/chrisgmartin/DATA608/master/lecture1/inc5000_data.csv", stringsAsFactors=FALSE)
+```
+
+##Question One
+
+Create a graph the at shows the distribution of companies in the dataset by State (ie how many are in each state). There are a lot of States, so consider which axis you should use assuming I am using a 'portrait' oriented screen (ie taller than wide).
+
+###Variety of Charts/Graphics
+
+```{r echo=FALSE}
+#Count number of companies per state
+statecount <- inc500 %>% 
+  group_by(., State) %>% 
+  dplyr::summarise(count = n())
+```
+
+
+####Map of the United States
+
+```{r echo=FALSE, warning=FALSE}
+#US Map
+stateConversion <- function(x, faclevs = 'selected') {
+ 
+    st.codes <- data.frame(state = as.factor(c("AK", "AL", "AR", "AZ", "CA", "CO", "CT", "DC", "DE", "FL", "GA", "HI",
+                                            "IA", "ID", "IL", "IN", "KS", "KY", "LA", "MA", "MD", "ME", "MI", "MN",
+                                            "MO", "MS",  "MT", "NC", "ND", "NE", "NH", "NJ", "NM", "NV", "NY", "OH",
+                                            "OK", "OR", "PA", "PR", "RI", "SC", "SD", "TN", "TX", "UT", "VA", "VT",
+                                            "WA", "WI", "WV", "WY")),
+                            full = as.factor(c("Alaska","Alabama" ,  "Arkansas", "Arizona","California" , "Colorado" ,
+                                            "Connecticut", "District of Columbia","Delaware" ,  "Florida" , "Georgia" ,
+                                            "Hawaii","Iowa" ,"Idaho" , "Illinois" , "Indiana" ,  "Kansas" ,
+                                            "Kentucky" , "Louisiana" , "Massachusetts", "Maryland" ,"Maine" ,
+                                            "Michigan" , "Minnesota" , "Missouri" ,"Mississippi" ,  "Montana" ,
+                                            "North Carolina","North Dakota", "Nebraska" , "New Hampshire" , "New Jersey" ,  "New Mexico" ,
+                                            "Nevada" ,"New York" , "Ohio" , "Oklahoma" ,
+                                            "Oregon" , "Pennsylvania" , "Puerto Rico", "Rhode Island" , "South Carolina", "South Dakota" ,
+                                            "Tennessee" , "Texas" , "Utah" ,  "Virginia","Vermont" ,
+                                            "Washington" , "Wisconsin", "West Virginia" , "Wyoming"))
+    )
+ 
+    if (nchar(x[1]) == 2) { st.x <- data.frame(state = x); refac.x <- st.codes$full[match(tolower(st.x$state), tolower(st.codes$state))] }
+    else { st.x <- data.frame(full = x); refac.x <- st.codes$state[match(tolower(st.x$full), tolower(st.codes$full))] }
+ 
+    if(faclevs == 'all') {return(refac.x)}
+    else {return(factor(refac.x))}
+ 
+}
+
+statecount2 <- statecount
+statecount2$State <- tolower(stateConversion(statecount$State, faclevs = 'selected'))
+colnames(statecount2) <- c('region','value')
+state_choropleth(statecount2, title = "Fastest Growing Companies (excl. Puerto Rico)", legend = "Num of Companies", num_colors = 8)
+```
+
+####Scatterplots
+
+Did not think a scatterplot was appropriate.
+
+####Bar Charts
+
+```{r echo=FALSE, warning=FALSE}
+statecount2 <- statecount
+statecount2$xaxis <- 1
+
+ggplot(statecount2, aes(x=State, y=count, fill=State)) + geom_bar(stat="identity", colour="gray32", width=0.4, show_guide=FALSE) + ggtitle("Count of Fastest Growing Companies")
+```
+
+```{r echo=FALSE}
+statecount2 <- statecount
+
+y.breaks <- cumsum(statecount2$count) - statecount2$count/2
+
+ggplot(statecount2, aes(x=1, y=count, fill=State)) + geom_bar(stat="identity") + ggtitle("Continuous Count of Fastest Growing Companies") + geom_bar(stat="identity", colour='black') + guides(fill=guide_legend(override.aes=list(colour=NA))) + theme(axis.text.x=element_text(color='black')) + scale_y_continuous(breaks=y.breaks, labels=statecount2$State)
+```
+
+####Circular Charts
+
+Note, I do agree with the sentiment that pie charts are not always the best visual aides. I try not to use them but I do like to use them in the process of finding the best visual aide. This section is not limited to pie charts, but general circular charts (such as radar).
+
+```{r echo=FALSE}
+statecount2 <- statecount
+
+ggplot(statecount2, aes(x=1, y=count, fill=State)) + geom_bar(stat="identity") + ggtitle("Count of Fastest Growing Companies in the United States") + coord_polar(theta = 'y')
+```
+
+
+```{r echo=FALSE}
+statecount2 <- statecount
+
+ggplot(statecount2, aes(x=count, fill=State)) + coord_polar() + geom_bar(width=1) + ggtitle("Count of Fastest Growing Companies")
+```
+
+
+###Recommended/Favorite Graphic
+
+My personal favorite graphic was the first bar chart, but it does not fit the display very well. So perhaps teh best chart is the continuous bar chart. The chart I'd like to use, I could not figure out how to create: a single line on the y-axis stretching from 0 to the maximum state count, with a label at the count per each state.
+
+
+
+###Question Two
+
+Let's dig in on the State with the 3rd most companies in the data set. Imagine you work for the state and are interested in how many people are employed by companies in different industries employ. Create a plot of average employment by industry for companies in this state (only use cases with full data (user R's complete.cases() function). Your graph should show how variable the ranges are, and exclude outliers.
+
+```{r echo=FALSE, warning=FALSE}
+#filter for third highest state count
+statecount3 <- statecount
+statecount3 <- statecount3[order(-statecount3$count),]
+statecount3 <- statecount3$State[3]
+indcount <- inc500[complete.cases(inc500),]
+indcount <- filter(indcount, State == statecount3)
+
+ggplot(indcount, aes(x=Industry, y=Employees)) + geom_boxplot(outlier.shape = NA) + scale_y_continuous(limits=quantile(indcount$Employees, c(0.1, 0.9))) + theme(axis.text.x = element_text(angle=90, hjust=1)) + ggtitle("Employees per Industry")
+```
+
+
+###Question Three
+
+Now imagine you work for an investor and want to see which industries generate the most revenue per employee. Create a chart makes this information clear.
+
+```{r echo=FALSE, warning=FALSE}
+#all of the United States
+revemp <- inc500
+revemp <- revemp[complete.cases(revemp),]
+revemp$RevperEmp <- revemp$Revenue/revemp$Employees
+ggplot(revemp, aes(x=Industry, y=RevperEmp)) + geom_boxplot(outlier.shape = NA) + scale_y_continuous(limits=quantile(revemp$RevperEmp, c(0.1, 0.9))) + theme(axis.text.x = element_text(angle=90, hjust=1)) + ggtitle("Revenue per Employees per Industry (all of the United States)")
+
+
+#for third highest state count
+revemp <- inc500[complete.cases(inc500),]
+revemp <- filter(revemp, State == statecount3)
+revemp$RevperEmp <- revemp$Revenue/revemp$Employees
+ggplot(revemp, aes(x=Industry, y=RevperEmp)) + geom_boxplot(outlier.shape = NA) + scale_y_continuous(limits=quantile(revemp$RevperEmp, c(0.1, 0.9))) + theme(axis.text.x = element_text(angle=90, hjust=1)) + ggtitle("Revenue per Employees per Industry (Third Higest State with FGC)")
+```
+
+
+
+
+
+##All Together (Code Displayed)
+
+```{r eval=FALSE}
+#load data
+inc500 <- read.csv("https://raw.githubusercontent.com/chrisgmartin/DATA608/master/lecture1/inc5000_data.csv", stringsAsFactors=FALSE)
+
+#QUESTION ONE
+#Count number of companies per state
+statecount <- inc500 %>% 
+  group_by(., State) %>% 
+  dplyr::summarise(count = n())
+
+#using a second df for data quality
+statecount2 <- statecount
+
+#continuous count bar chart
+#for US state counts
+y.breaks <- cumsum(statecount2$count) - statecount2$count/2
+
+ggplot(statecount2, aes(x=1, y=count, fill=State)) + geom_bar(stat="identity") + ggtitle("Continuous Count of Fastest Growing Companies") + geom_bar(stat="identity", colour='black') + guides(fill=guide_legend(override.aes=list(colour=NA))) + theme(axis.text.x=element_text(color='black')) + scale_y_continuous(breaks=y.breaks, labels=statecount2$State)
+
+#QUESTION TWO
+#filter for third highest state count and remove incomplete cases
+statecount3 <- statecount
+statecount3 <- statecount3[order(-statecount3$count),]
+statecount3 <- statecount3$State[3]
+indcount <- inc500[complete.cases(inc500),]
+indcount <- filter(indcount, State == statecount3)
+
+#plot
+ggplot(indcount, aes(x=Industry, y=Employees)) + geom_boxplot(outlier.shape = NA) + scale_y_continuous(limits=quantile(indcount$Employees, c(0.1, 0.9))) + theme(axis.text.x = element_text(angle=90, hjust=1))
+
+#QUESTION THREE
+#all of the United States
+revemp <- inc500
+revemp <- revemp[complete.cases(revemp),]
+revemp$RevperEmp <- revemp$Revenue/revemp$Employees
+ggplot(revemp, aes(x=Industry, y=RevperEmp)) + geom_boxplot(outlier.shape = NA) + scale_y_continuous(limits=quantile(revemp$RevperEmp, c(0.1, 0.9))) + theme(axis.text.x = element_text(angle=90, hjust=1)) + ggtitle("Revenue per Employees per Industry (all of the United States)")
+
+
+#for third highest state count
+revemp <- inc500[complete.cases(inc500),]
+revemp <- filter(revemp, State == statecount3)
+revemp$RevperEmp <- revemp$Revenue/revemp$Employees
+ggplot(revemp, aes(x=Industry, y=RevperEmp)) + geom_boxplot(outlier.shape = NA) + scale_y_continuous(limits=quantile(revemp$RevperEmp, c(0.1, 0.9))) + theme(axis.text.x = element_text(angle=90, hjust=1)) + ggtitle("Revenue per Employees per Industry (Third Higest State with FGC)")
+```
