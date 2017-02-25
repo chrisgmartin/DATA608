@@ -1,0 +1,154 @@
+---
+title: "DATA608 - Homework Two"
+author: "Chris G Martin"
+date: "February 19, 2017"
+fontsize: 11pt
+output:
+  html_document:
+    fig_caption: yes
+    force_captions: yes
+    highlight: pygments
+    number_sections: no
+    theme: united
+    toc: yes
+  pdf_document:
+    fig_caption: yes
+    highlight: pygments
+    latex_engine: xelatex
+    number_sections: no
+    toc: yes
+---
+
+#Objective
+
+We will be working with data about every tax lot in NYC, in a zip file. Please download it from http://www1.nyc.gov/site/planning/data-maps/open-data/dwn-pluto-mappluto.page. You will need to combine the data from each boro into one file called 'all_PLUTO_data.R' in order to complete this assignment. I encourage you to do this via code but it is not necessary to submit such code.
+
+-  This assignment must be done in a single R script with ggplot2. Use of bigvis is encouraged but not required.
+
+-  Please zip your code and images into a file, named 'Last_First_hw2.zip' (mine would be 'Ferrari_Charley_hw2.zip'.
+
+-  I have created some codes in the sample code file for you- this assumes the data is in a file called 'all_PLUTO_data' which you will need to create (as mentioned above).
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+#load packages
+#library(devtools)
+#install_github(repo='hadley/bigvis')
+library(bigvis)
+library(ggplot2)
+library(dplyr)
+library(ggthemes)
+```
+
+```{r echo=FALSE}
+plutoBronx <- read.csv("C:/Users/itsal/Documents/GitHub/DATA608/lecture2/BX.csv", stringsAsFactors=FALSE)
+plutoBrooklyn <- read.csv("C:/Users/itsal/Documents/GitHub/DATA608/lecture2/BK.csv", stringsAsFactors=FALSE)
+plutoManhattan <- read.csv("C:/Users/itsal/Documents/GitHub/DATA608/lecture2/MN.csv", stringsAsFactors=FALSE)
+plutoQueens <- read.csv("C:/Users/itsal/Documents/GitHub/DATA608/lecture2/QN.csv", stringsAsFactors=FALSE)
+plutoStaten <- read.csv("C:/Users/itsal/Documents/GitHub/DATA608/lecture2/SI.csv", stringsAsFactors=FALSE)
+```
+
+```{r echo=FALSE}
+#combine all tables
+plutoAll <- rbind(plutoBronx, plutoBrooklyn)
+plutoAll <- rbind(plutoAll, plutoManhattan)
+plutoAll <- rbind(plutoAll, plutoQueens)
+plutoAll <- rbind(plutoAll, plutoStaten)
+```
+
+Here is a list of the column names in the dataset:
+
+```{r echo=FALSE}
+colnames(plutoAll)
+```
+
+```{r echo=FALSE}
+#save all data
+write.table(plutoAll, file="C:/Users/itsal/Documents/GitHub/DATA608/lecture2/all_PLUTO_data.csv")
+```
+
+
+
+
+##Question One
+
+After a few building collapses, the City of New York is going to begin investigating older buildings for safety. However, the city has a limited number of inspectors, and wants to find a 'cut-off' date before most city buildings were constructed. Build a graph to help the city determine when most buildings were constructed. Is there anything in the results that causes you to question the accuracy of the data? (note: only look at buildings built since 1850).
+
+The first step I'll take is to explore the data at a high level. It's important to make sure the data is valid (Garbage In: Garbage Out) and remove any possible 'false entries'. For this question we're most interested in the year the building was built (YearBuilt) regardless of the type -- so most of the data is irrelevant (zoning, address, etc.). Let's see what the area of the buildings look like by year (excluding buildings without a measured size):
+
+```{r echo=FALSE}
+plutoYears <- plutoAll %>% 
+  filter(YearBuilt>1850, BldgArea != 0)
+ggplot(plutoYears, aes(x=YearBuilt, y=BldgArea)) + geom_point()
+```
+
+There are clearly outliers in the high-end, but the low end needs more consideration. Just out of curiousity, let's re-do this chart and keep only the values within 99% range (exclude values outside of this range):
+
+```{r echo=FALSE, warning=FALSE}
+plutoYearsbin <- with(plutoYears, condense(bin(YearBuilt, 5)))
+ggplot(plutoYearsbin, aes(x=YearBuilt, y=.count, color=.count)) + geom_point()
+```
+
+This is much closer to our answer, but we should get rid of some of the mess. Clearly our cutoff is not going to be before the 1900's or after 2015:
+
+```{r echo=FALSE, warning=FALSE}
+ggplot(plutoYearsbin, aes(x=YearBuilt, y=.count, color=.count)) + geom_point() + xlim(1900, 2015) + ylab('Number of Buildings')
+```
+
+For our question, I believe the cutoff would be around the 1920's, with a large number of buildings being built between 1920-1930.
+
+
+##Question Two
+
+The city is particularly worried about buildings that were unusually tall when they were built, since best-practices for safety hadn't yet been determined. Create a graph that shows how many buildings of a certain number of floors were built in each year (note: you may want to use a log scale for the number of buildings). It should be clear when 20-story buildings, 30-story buildings, and 40-story buildings were first built in large numbers.
+
+Let's first get an idea of the data we're looking at, and exclude buildings built before 1850, those with 0 value for floors, and (assuming best-practices were established in 2000) excluing buildings built after 2000.
+
+```{r echo=FALSE}
+plutoFloors <- plutoAll %>% 
+  filter(YearBuilt>1850, YearBuilt<2000, NumFloors != 0)
+
+ggplot(plutoFloors, aes(x=YearBuilt, y=NumFloors)) + geom_point()
+```
+
+If we look at the average number of floors built in each year, there is a noticable difference but it can be explained by the higher number of buildings built between the 1930s-1960s.
+
+```{r echo=FALSE, warning=FALSE}
+plutoFloorsbin <- with(plutoFloors, condense(bin(YearBuilt, 5), z=NumFloors))
+ggplot(plutoFloorsbin, aes(x=YearBuilt, y=.mean, color=.count)) + geom_point()
+```
+
+Now looking only at the number of floors by year:
+
+```{r echo=FALSE}
+plutoFloorsbin <- with(plutoFloors, condense(bin(NumFloors, 10), bin(YearBuilt, 5)))
+ggplot(plutoFloorsbin, aes(x=YearBuilt, y=NumFloors, color=.count)) + geom_point()
+```
+
+It is clear from this last chart that there were a significant number of tall buildings built in the 1930's timeframe.
+
+##Question Three
+
+Your boss suspects that buildings constructed during the US's involvement in World War II (1941-1945) are more poorly constructed than those before and after the way due to the high cost of materials during those years. She thinks that, if you calculate assessed value per floor, you will see lower values for buildings at that time vs before or after. Construct a chart/graph to see if she's right.
+
+We'll start by defining the period for pre-war was 1930-1939, the period for war as 1940-1945, and post-war as 1946-1955. This range is not even (there are more post/pre war years) but I think it is more valid since the 5 pre-war years could have been anticipating the war and thus throw off the values. In such a case, 5 years before and after will act as the pre/post-war buffers. At a high level, this is what the value per floor looks like over these years:
+
+```{r echo=FALSE}
+plutoValues <- plutoAll %>% 
+  filter(YearBuilt>1930, YearBuilt < 1955, NumFloors != 0, AssessTot != 0) %>% 
+  select(YearBuilt, AssessTot, NumFloors)
+plutoValues$ValuePerFloor <- plutoValues$AssessTot / plutoValues$NumFloors
+ggplot(plutoValues, aes(x=YearBuilt, y=ValuePerFloor)) + geom_point()
+```
+
+There is a significantly large value building in this time period, which we can eliminate quite but also narror the years to the 5 year spans:
+
+```{r echo=FALSE, warning=FALSE}
+plutoValues <- plutoAll %>% 
+  filter(YearBuilt>1930, YearBuilt < 1955, NumFloors != 0, AssessTot != 0, AssessTot < 1000000000) %>% 
+  select(YearBuilt, AssessTot, NumFloors)
+plutoValues$ValuePerFloor <- plutoValues$AssessTot / plutoValues$NumFloors
+plutoValuesbin <- with(plutoValues, condense(bin(YearBuilt, 5), z=ValuePerFloor))
+ggplot(plutoValuesbin, aes(x=YearBuilt, y=.mean, color=.count)) + geom_point() + ylab('Average Assessment per Floor')
+```
+
+While she is correct that the average value per floor is significantly lower during the war-time periods, I do not agree that the average assessment per floor is the best measure of cost of materials. Cost of materials pre/post war could vary significantly due to factors such as trade agreements, global and local supply/demand, currency fluctuations, and manufacturing efficiencies.
