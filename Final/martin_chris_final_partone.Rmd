@@ -1,0 +1,559 @@
+---
+title: "Minimum Wage and Inflation, Discourse"
+author: "Chris G Martin"
+date: "May 16, 2017"
+output:
+  html_document:
+    fig_caption: yes
+    force_captions: yes
+    highlight: pygments
+    number_sections: no
+    theme: united
+    toc_float: yes
+    toc: yes
+  pdf_document:
+    fig_caption: yes
+    highlight: pygments
+    latex_engine: xelatex
+    number_sections: no
+fontsize: 11pt
+---
+
+```{r message=FALSE, echo=FALSE, warning=FALSE}
+library(plyr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+```
+
+#Overview
+
+This final project was designed to visualize and analyze the current U.S. policy topic on minimum wage and possible correlations with inflation and employement. After having started working on this project, I came acorss a fairly recent publication from the National Employment Law Project titled: ['Raise Wages, Kill Jobs? Seven Decades of Historical Data Find No Correlation Between Minimum Wage Increases and Employement Levels'](http://www.nelp.org/publication/raise-wages-kill-jobs-no-correlation-minimum-wage-increases-employment-levels/). This is an interesting brief with many parallels to what I'm looking at showing in this project, however my focus is on the interactive visualization aspect and not the correlation itself. My motivations for the project include a passing interest in the topic and I have no alterior motives here (such as a lucrative employment contract or salary). But please, feel free to send some money my way!
+
+**Note: This is Part One of Three**
+
+This part includes data gathering for the raw data, explainations as to the how and why a specific data set was used vs alternative sets, analysis of the data, and discussion. Part Two is a Jupyter notebook running a Python script to extract data 
+
+Part Three includes an interactive d3 visualization of the data. 
+
+##Consumer Price Index (CPI)
+
+Quoted from the United States' Department of Labor's (DOL) Bureau of Labor Statistics (BLS):
+
+"The Consumer Price Index (CPI) is a statistical measure of change, over time, of the prices of goods and services in major expenditure groups--such as food, housing, apparel, transportation, and medical care--typically purchased by urban consumers.  Essentially, it compares the cost of a sample "market basket" of goods and services in a specific month relative to the cost of the same "market basket" in an earlier reference period.  This reference period is designated as the base period."
+
+Not surprisingly, the BLS maintains several varieties of the CPI as it has developed over the years. To better analyse the price change through the CPI over time, there are three main different applicable data repositories: 1) Average Price Data [(AP)](https://download.bls.gov/pub/time.series/ap/ap.txt), 2) CPI for Urban Consumers as introduced in 1987 [(MU)](https://download.bls.gov/pub/time.series/mu/Mu.txt), and 3) the revised CPI for Urban Consumers as introduced in 1998 [(CU)](https://download.bls.gov/pub/time.series/cu/cu.txt). The AP data is most useful to compare prices for items across different regions / urban areas and worth noting that this data is "best used to measure the price level in a particular month, not to measure price change over time" (BLS' AP.txt). The difference between the MU dataset and CU dataset is that the CU dataset is the most recent methodology for calculating the CPI, and likely the best option for this project without getting into specifics on how or why. As such, the [full CU  dataset](https://download.bls.gov/pub/time.series/cu/) will be used for this project.
+
+
+##Minimum Wage Rates
+
+Minimum wage is much more difficult to analyze, but the general minimum wage rate will be used (as opposed to tip-based workers). The website for the [U.S. Department of Labor](https://www.dol.gov/whd/state/stateMinWageHis.htm) is handy for this as it includes the changes to the basic minimum wages in non-farm employment under state law, for years between 1968-2016. There are many caveats to the data as I display it in this project, so be sure to read the notes throughout this report to understand what has changed.
+
+
+##US Employment Levels
+
+Another data field I could include is the unemployment rate, and possibly minimum wage as a function of unemployment. Due to time constraints, I've decided to skip this section, but see the notes at the end for *next steps* for items that could be included in the analysis and project for future value-add! The data from the [Bureau of Labor Statistics](https://www.bls.gov/lau/metrossa.htm) is primarily useful.
+
+
+#Data Gathering and Data Formatting
+
+##CPI CU Data
+
+Thankfully, the CPI data has been maintained and is still openly available on the [BLS website](https://www.bls.gov/). Using the properly formatted dataset which includes "All Items", we can take a look at what this actually means and looks like:
+
+```{r}
+CPI <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/cu.data.1.AllItems', header=TRUE, sep='\t')
+head(CPI)
+```
+
+Looks great, doesn't it? Well, I'm just as confused as you are. With this data, it is probably helpful to include translations for the various ID's and codes. Also, one item that it interesting to note is that our "All Items" CPI dataset only includes the aggregation of all items in both the old and revised CPI base measurement. This is for the sake of simplicity of the analysis, with full details available but not used. We just want the general idea of inflation, not the specific items.
+
+###Series Details
+
+The main column of the dataset is the "Series ID" number. The BLS includes a key for this called "Series Details" which includes data for series_id and a ton of metadata that will be incredibly helpful to understand what we're looking at. Let's take a look at it and add it to our "full" CPI data.
+
+Unfortunately, the series details set is not perfectly formatted but all it took was a simple save to the desktop and some light spacing, then it was ready to import. The header available in the CPI includes:
+
+```{r}
+CPIseries <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/cu.series', header=TRUE, sep='\t')
+head(CPIseries)
+```
+
+Now to merge it with the original:
+
+```{r}
+CPI <- join(CPI, CPIseries, by='series_id')
+head(CPI)
+```
+
+###Item Codes
+
+Still, more codes and more questions. What exactly are these items being refered to in the column for 'item_code'?
+
+```{r}
+CPIitem <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/cu.item', header=TRUE, sep='\t')
+CPIitem <- cbind('item_code2' = rownames(CPIitem), CPIitem)
+rownames(CPIitem) <- 1:nrow(CPIitem)
+colnames(CPIitem) <- c('item_code', 'item_name', 'display_level', 'selectable', 'sort_sequence', 'NA')
+head(CPIitem)
+```
+
+As mentioned before, the items included in this set are the aggregated "All Items" codes in both old and revised CPI base measurements. Merge with the original:
+
+```{r}
+CPI <- join(CPI, CPIitem, by='item_code')
+```
+
+
+###Area Codes
+
+The area codes will give us geographic urban areas:
+
+```{r}
+CPIarea <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/cu.area', header=TRUE, sep='\t')
+CPIarea <- cbind('area_code2' = rownames(CPIarea), CPIarea)
+rownames(CPIarea) <- 1:nrow(CPIarea)
+colnames(CPIarea) <- c('area_code', 'area_name', 'display_level', 'selectable', 'sort_sequence', 'NA')
+head(CPIarea)
+```
+
+Merge with the original:
+
+```{r}
+CPI <- join(CPI, CPIarea, by='area_code')
+```
+
+###Base Codes
+
+Base codes are the measurement for CPI:
+
+```{r}
+CPIbase <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/cu.base', header=TRUE, sep='\t')
+CPIbase <- cbind('base_code2' = rownames(CPIbase), CPIbase)
+rownames(CPIbase) <- 1:nrow(CPIbase)
+colnames(CPIbase) <- c('base_code', 'base_name', 'NA')
+CPIbase
+```
+
+Merge with the original:
+
+```{r}
+CPI <- join(CPI, CPIbase, by='base_code')
+```
+
+###Period Codes
+
+Period codes transalte the periods from the M or S codes to their English month / period names or abbreviations:
+
+```{r}
+CPIperiod <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/cu.period', header=TRUE, sep='\t')
+head(CPIperiod)
+```
+
+Merge with the original:
+
+```{r}
+CPI <- join(CPI, CPIperiod, by='period')
+```
+
+###Periodicity Codes
+
+Periodicity refers to the periodic nature of the measurement:
+
+```{r}
+CPIperiodicity <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/cu.periodicity', header=TRUE, sep='\t')
+CPIperiodicity <- cbind('periodicity_code2' = rownames(CPIperiodicity), CPIperiodicity)
+rownames(CPIperiodicity) <- 1:nrow(CPIperiodicity)
+colnames(CPIperiodicity) <- c('periodicity_code', 'periodcity_name', 'NA')
+CPIperiodicity
+```
+
+Merge with the original:
+
+```{r}
+CPI <- join(CPI, CPIperiodicity, by='periodicity_code')
+```
+
+###CPI Summary
+
+Finally, our CPI dataset is full and complete. It's extremely large, but it's very full of information. Here's an R Summary (with NA columns removed)!
+
+```{r}
+cols <- c(1:4, 6:12, 14:18, 21, 23:26, 28, 30:32)
+CPI <- CPI[, cols]
+summary(CPI)
+```
+
+I like to keep my environment as clean as I can, so here's a quick section to clean out the tables we no longer need:
+
+```{r}
+rm(CPIarea)
+rm(CPIbase)
+rm(CPIitem)
+rm(CPIperiod)
+rm(CPIperiodicity)
+rm(CPIseries)
+```
+
+###Export CPI Table
+
+For use in other applications, it's nice to have a local copy of the data. Here is the code to export the CSV.
+
+```{r}
+write.csv(CPI, file="CPI.csv")
+
+```
+
+
+
+##Minimum Wage Data
+
+**Per Part Two of Three**: The data table was only supplied in a webtable and had to be scraped by a Python script. For more details of the [Python script, click here](https://github.com/chrisgmartin/DATA608/blob/master/Final/martin_chris_final_parttwo.ipynb). The data was then exported from Python as a CSV where it can be imported into R. Here is that import:
+
+```{r}
+MWR <- read.csv2('https://raw.githubusercontent.com/chrisgmartin/DATA608/master/Final/dolwages.csv', header=FALSE, sep='\t', stringsAsFactors = FALSE)
+head(MWR)
+```
+
+As mentioned in the script, this data is messy. It needs to be cleaned. That's what we'll do in this section.
+
+###The Eight Deadly Rows
+
+One aspect of this table is that every 8 rows relate to the data corresponding to its state in the first row, until the last set of data points in which every 4 rows relate to data corresponding to the state in the first row. First, we'll breakout the table for every 8 row patterns:
+
+```{r}
+#need to iterate over each 8 records
+#create a list of multiples from 1-220
+list8 <- (2:220-1)
+list8 <- c(1,list8*8+1)
+
+temp <- unlist(MWR)
+#iterate over each record in the multiples
+clean_doltable8 <- function(table, iterable){
+  df <- data.frame()
+  for (i in 1:length(iterable)){
+    a <- iterable[i]
+    b <- a+1
+    c <- a+2
+    d <- a+3
+    e <- a+4
+    f <- a+5
+    g <- a+6
+    h <- a+7
+    #find the value for each variable
+    #append each with new variable
+    df[i,1] <- table[a]
+    df[i,2] <- table[b]
+    df[i,3] <- table[c]
+    df[i,4] <- table[d]
+    df[i,5] <- table[e]
+    df[i,6] <- table[f]
+    df[i,7] <- table[g]
+    df[i,8] <- table[h]
+  }
+  colnames(df) <- c('state', '1968', '1970', '1972', '1976', '1979', '1980', '1981')
+  df
+}
+
+temp2 <- clean_doltable8(temp, list8)
+head(temp2)
+```
+
+It looks good, but now every state is stacked on top of each other (i.e. row 56 is Federal again). Fixing that is easy:
+
+```{r}
+temp3 <- temp2[1:55,1:8]
+temp4 <- temp2[56:110,2:8]
+temp5 <- temp2[111:165,2:8]
+temp6 <- temp2[166:nrow(temp2),2:8]
+temp7 <- cbind(temp3, temp4)
+temp7 <- cbind(temp7, temp5)
+temp7 <- cbind(temp7, temp6)
+colnames(temp7) <- c('state', '1968', '1970', '1972', '1976', '1979', '1980', '1981', '1988', '1991', '1992', '1994', '1996', '1997', '1998', '2000', '2001', '2002', '2003', '2004', '2005', '2006', '2007', '2008', '2009', '2010', '2011', '2012', '2013')
+head(temp7)
+```
+
+Now repeate those steps for the 4 row patterns and merge to get the full set all in one table:
+
+```{r}
+#need to iterate over each 4 records
+#create a list of multiples for the 55 states
+list4 <- (2:55-1)
+list4 <- c(1,list4*4+1)
+
+temp8 <- temp[1761:1980]
+#iterate over each record in the multiples
+clean_doltable4 <- function(table, iterable){
+  df <- data.frame()
+  for (i in 1:length(iterable)){
+    a <- iterable[i]
+    b <- a+1
+    c <- a+2
+    d <- a+3
+    #find the value for each variable
+    #append each with new variable
+    df[i,1] <- table[b]
+    df[i,2] <- table[c]
+    df[i,3] <- table[d]
+  }
+  colnames(df) <- c('2014', '2015', '2016')
+  df
+}
+
+temp9 <- clean_doltable4(temp8, list4)
+#merge with main table
+temp10 <- cbind(temp7,temp9)
+head(temp10)
+```
+
+###The Mysterious Symbols
+
+Our table is set-up but there are so many HTML symbols and other notations in the data that we'll have a hard time understanding what it is we're looking at. To simplify it we'll remove the tags, use the higher of wages with multiple values due to stipulations, remove symbols (which usually refer to company size or phasing or other notes, which you can refer to the website for), change '...' values to the Federal wage, and convert the values to integers. Finally, 1968-1972 had wages listed as 'per-week' or 'per-day', and these will be changed to an appropriate amount (week/40 hours, or day/8 hours).
+
+```{r}
+#remove html tags
+test <- data.frame(lapply(temp10, function(i){
+  str_replace_all(i, "<[^>]+>", '')
+}))
+#remove html tags and create a new frame for state names
+test1 <- data.frame(lapply(temp10, function(i){
+  str_replace_all(i, "<[^>]+>", '')
+}))
+#remove slashes
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, "\\[.*\\]", '')
+}))
+#remove slashes
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, "\\(.*\\)", '')
+}))
+#remove alpha characters and separate state names out
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, "[:alpha:]", '')
+}))
+#remove page breaks and line marks
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, "[\r\n]", '')
+}))
+#remove rouge slash marks
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, "[//]", '')
+}))
+#remove all characters before the dash
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, ".*-", '')
+}))
+#remove all characters before the and symbol
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, ".*&", '')
+}))
+#remove other pesky items
+test <- data.frame(lapply(test, function(i){
+  str_replace_all(i, "[^[:alnum:]^..*///' ]", '')
+}))
+#remove alpha characters and separate state names out
+test1 <- data.frame(lapply(test1[1], function(i){
+  str_replace_all(i, "[\r\n]", '')
+}))
+
+#Puerto Rico is still giving problems, these will manually fix it
+test[54,26] <- c(7.25)
+test[54,27] <- c(7.25)
+test[54,28] <- c(7.25)
+test[54,29] <- c(7.25)
+
+#Virigin Islands is also a manually fixed pain
+test[55,2] <- '...'
+test[55,3] <- '...'
+test[55,4] <- '...'
+test[55,5] <- '...'
+
+#The weekly rates are a manual fix
+test[4,2] <- '...'
+test[4,3] <- '...'
+test[4,4] <- '...'
+
+#the daily rates are also a fix manually
+test[5,2] <- '...'
+
+#add back state names
+test <- cbind(test1[1], test[2:ncol(test)])
+
+head(test)
+```
+
+PHEW, nearly done. Now need to replace the '...' with the federal rates.
+
+
+```{r}
+#change all factors to characters
+test2 <- data.frame(lapply(test, as.character), stringsAsFactors = FALSE)
+#replace periods with federal rates
+for(i in 2:ncol(test2)){
+  a <- test2[1,i]
+  test2[i][test2[i]=='...'] <- a
+}
+
+#fix missing values and other errors
+test2[42,2] <- c(.5)
+test2[55,10] <- c(4.65)
+test2[55,10] <- c(4.65)
+test2[55,11] <- c(4.65)
+test2[55,12] <- c(4.65)
+
+
+#change values to numeric
+test2[2:ncol(test2)] <- lapply(test2[2:ncol(test2)], as.numeric)
+MWR_table <- test2
+head(MWR_table)
+```
+
+And, as mentioned before, I like to keep my environment as clean as I can, so here's a quick section to clean out the tables we no longer need:
+
+```{r}
+rm(temp10)
+rm(temp2)
+rm(temp3)
+rm(temp4)
+rm(temp5)
+rm(temp6)
+rm(temp7)
+rm(temp9)
+rm(MWR)
+rm(test)
+rm(test1)
+rm(test2)
+```
+
+###Tidying The Table
+
+It's important to tidy the data, but it's also incredibly useful with data visualization. [This post is a nice explaination](http://garrettgman.github.io/tidying/) of tidy data, it's usefulness, and how it's done in R. Here's some quick code to do just that:
+
+```{r}
+MWR_tidy <- gather(MWR_table, 'year', 'rate', 2:ncol(MWR_table))
+MWR_tidy$year <- gsub('X', '', MWR_tidy$year)
+MWR_tidy$year <- as.numeric(MWR_tidy$year)
+head(MWR_tidy)
+```
+
+###MWR Summary
+
+Similar to the summary for CPI data, here's a summary of the MWR data we've beautifully gathered and tidied (one for messy and one for tidy):
+
+```{r}
+summary(MWR_table)
+summary(MWR_tidy)
+```
+
+And I'll remove the now unncessary tables from our clean environment:
+
+```{r}
+rm(MWR)
+rm(MWR_table)
+```
+
+
+#Data Visualizations
+
+A preliminary to giving the user the beautiful and interactive data visualization, I personally like to explore what we have to see what we can get from each of our sources. Hopefully this helps build an understanding of what we have before shipping it out.
+
+##CPI Exploration
+
+For CPI data, we're really looking at too much information. Unfortunately I don't think my original plan will work due to added complexity; I was hoping to view CPI against the minimum wage in each area (e.g. state) where it applied, however, it is much, much simpler to see the U.S. city average CPI. To add the complexity, I will keep data for all items in the U.S. city average for all urban consumers and include both seasonally adjusted and non-sesasonally adjusted values. To reduce that complexity a bit more, instead of a monthly CPI we'll look at annual CPI as it better aligns to annual minimum wage rates.
+
+```{r}
+#subset data by series_title
+CPI_all <- subset(CPI, series_title == 'All items in U.S. city average, all urban consumers, seasonally adjusted' | series_title == 'All items in U.S. city average, all urban consumers, not seasonally adjusted')
+
+#change all factors to characters
+CPI_all <- data.frame(lapply(CPI_all, as.character), stringsAsFactors = FALSE)
+
+#change values and years to numeric
+CPI_all$value <- as.numeric(CPI_all$value)
+CPI_all$year <- as.numeric(CPI_all$year)
+
+#group items and average values
+CPI_table <- CPI_all %>%
+  group_by(series_id, year, series_title) %>% 
+  summarise(., value = mean(value))
+
+head(CPI_table)
+```
+
+Beautiful. Our data is tidy, it's clean, and we have exactly what we want! There are now three different series_id's with two titles. The differences are that we have data for seasonally adjusted, not seasonally adjusted at a monthly rating system, and not seasonally adjusted at a semi-annual rating system. These will be handy! But first we'll change the titles to something more appropriate: Seasonally Adjusted (monthly average), Not Seasonally Adjusted (monthly average), and Not Seasonally Adjusted (semi-annual average).
+
+```{r}
+CPI_table$title <- CPI_table$series_id
+#add title row based on values of the series_id
+CPI_table$title[CPI_table$series_id == 'CUSR0000SA0      '] <- 'Seasonally Adjusted (monthly average)'
+CPI_table$title[CPI_table$series_id == 'CUUR0000SA0      '] <- 'Not Seasonally Adjusted (monthly average)'
+CPI_table$title[CPI_table$series_id == 'CUUS0000SA0      '] <- 'Not Seasonally Adjusted (semi-annual average)'
+
+#group to remove extra items
+CPI_table <- CPI_table %>% 
+  group_by(title, year) %>% 
+  summarise(., value = mean(value))
+
+CPI_table
+```
+
+Now let's take a look at how these values have changed over time:
+
+```{r}
+ggplot(CPI_table, aes(x=year, y=value)) + geom_line(aes(color = title))
+```
+
+There seems to be overlap, so not much of a difference between these values in this view. Let's see if changing points to lines will make a difference. The answer is it won't!
+
+```{r}
+ggplot(CPI_table, aes(x=year, y=value)) + geom_point(aes(color = title))
+```
+
+Zooming in a bit helps to see a very, very slight difference between the three methods of CPI calculation:
+
+```{r}
+ggplot(CPI_table, aes(x=year, y=value)) + geom_point(aes(color = title)) + coord_cartesian(xlim = c(1950, 2017), ylim = c(25, 250))
+```
+
+For our third part (the interactive shiny application), it will be easier to just use the csv version of our data rather than having to query a second RMarkdown file. Here is that export:
+
+```{r}
+write.csv(CPI_table, file="CPI_table.csv")
+```
+
+And finally, I'll remove unncessary dataframes from our environment because I like it clean.
+
+```{r}
+rm(CPI)
+rm(CPI_all)
+```
+
+##MWR Exploration
+
+Looking at the minimum wages, we can see that over time each state has raised their wages (as would be expected) but some states have been delayed. For example, it appears that Michigan was a real laggard in the 1990's.
+
+```{r}
+ggplot(MWR_tidy, aes(x=year, y=rate)) + geom_line(aes(color = state))
+```
+
+Interestingly, the spread between the years have changed dramatically. From the 1970's to mid 1980's, the minimum wage rate has stayed within a relatively close band. After that, however, until the end of the 2000's the minimum wage has varied much more widely between states. Then around 2008, a relative conformity has emerged with states being more-or-less aligned and the difference more minimized.
+
+```{r}
+ggplot(MWR_tidy, aes(x=year, y=rate)) + geom_boxplot(aes(group=year), scale='area')
+```
+
+Finally, as mentioned I'll export this final table for use in our third part.
+
+```{r}
+write.csv(MWR_tidy, file="MWR_tidy.csv")
+```
+
+
+#Next Steps
+
+There are certainly areas that could be improved. For example, in the end I decided on taking the annually averaged value for CPI data rather than getting into the weeds and using a monthly scale. I could have also used the regions and match them with their states, rather than a simple U.S. average rate. This would have made a more dynamic end-product.
+
+Performance could also be handidly improved. For one reason, I used a signficant number of *for* loops which are well known to drop performance. There are also a lot of tables being added unnecessarily and a lot of things going on that simply weren't used. The environment also could have been cleaned eariler that it was but I like to consistency of doing it all together at the end.
+
+Lastly, I could include more data and merge data together for new perspectives. I'm sure there's a factor of CPI and minimum wage that would have been a great addition to visualizing unemployment statistics.
